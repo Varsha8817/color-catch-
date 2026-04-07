@@ -1,0 +1,381 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Color Catch Game</title>
+<style>
+  :root {
+    --bg: #eeeeee;
+    --panel: #ffffff;
+    --ink: #1f2430;
+    --accent: #ff6b6b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    background: radial-gradient(circle at 20% 10%, #fdfdfd, #f1f1f1 40%, #e7e7e7 70%, #dfdfdf);
+    color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+  }
+
+  .wrap {
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+  }
+
+  .hud {
+    width: 420px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--panel);
+    border: 2px solid #d7d7d7;
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    font-size: 16px;
+    letter-spacing: 0.3px;
+  }
+
+  .hud span {
+    font-weight: 700;
+  }
+
+  .game-frame {
+    width: 420px;
+    padding: 10px;
+    background: #f9f9f9;
+    border: 2px solid #d7d7d7;
+    border-radius: 18px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.10);
+  }
+
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: var(--bg);
+    border-radius: 10px;
+  }
+
+  .hint {
+    font-size: 13px;
+    color: #555;
+  }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    place-items: center;
+    background: rgba(0,0,0,0.45);
+    backdrop-filter: blur(3px);
+  }
+
+  .popup {
+    width: 320px;
+    background: white;
+    border-radius: 16px;
+    padding: 18px;
+    text-align: center;
+    border: 2px solid #d7d7d7;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.2);
+  }
+
+  .popup h2 {
+    margin: 6px 0 10px;
+    font-size: 22px;
+  }
+
+  .popup button {
+    margin-top: 10px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 10px;
+    background: var(--accent);
+    color: white;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .flash {
+    animation: flash 200ms ease;
+  }
+
+  @keyframes flash {
+    from { filter: brightness(1.3); }
+    to { filter: brightness(1); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hud">
+      <div>Score: <span id="score">0</span></div>
+      <div>Lives: <span id="lives">3</span></div>
+      <div>Bucket Color: <span id="bucketColorLabel">red</span></div>
+    </div>
+
+    <div class="game-frame">
+      <canvas id="game" width="400" height="600" aria-label="Color Catch Game"></canvas>
+    </div>
+
+    <div class="hint">Move with Arrow Keys or A/D. Catch only matching colors.</div>
+  </div>
+
+  <div class="overlay" id="overlay">
+    <div class="popup">
+      <h2>Game Over</h2>
+      <div id="finalScore">Final Score: 0</div>
+      <button id="restartBtn">Restart</button>
+    </div>
+  </div>
+
+<script>
+// ====== Simple Color Catch Game ======
+// This game runs immediately when the page loads.
+// Everything is kept in this one file for easy use.
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const scoreEl = document.getElementById("score");
+const livesEl = document.getElementById("lives");
+const bucketColorLabel = document.getElementById("bucketColorLabel");
+const overlay = document.getElementById("overlay");
+const finalScoreEl = document.getElementById("finalScore");
+const restartBtn = document.getElementById("restartBtn");
+
+// Game settings
+const COLORS = ["red", "blue", "green", "yellow"]; // possible circle colors
+const bucketWidth = 80;
+const bucketHeight = 16;
+const bucketY = canvas.height - 30; // bucket sits near the bottom
+
+let circles = []; // all falling circles
+let score = 0;
+let lives = 3;
+let gameOver = false;
+
+// Player state
+const bucket = {
+  x: (canvas.width - bucketWidth) / 2,
+  color: COLORS[0],
+  speed: 5
+};
+
+let leftPressed = false;
+let rightPressed = false;
+
+// Spawn timing
+let lastSpawn = 0;
+const spawnInterval = 1000; // 1 circle per second
+
+// Bucket color changes every 7 seconds to keep things interesting
+let lastColorChange = 0;
+const colorChangeInterval = 7000;
+
+// Small visual feedback when catching
+let flashTimer = 0;
+
+// ====== Simple sound system (no external files) ======
+// Browsers require a user action before sound can play.
+let audioCtx = null;
+
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+}
+
+function playTone(freq, duration, type = "sine", volume = 0.08) {
+  if (!audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.value = volume;
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function randomColor() {
+  return COLORS[Math.floor(Math.random() * COLORS.length)];
+}
+
+function spawnCircle() {
+  const radius = 14;
+  const x = Math.random() * (canvas.width - radius * 2) + radius;
+  circles.push({
+    x,
+    y: -radius,
+    radius,
+    color: randomColor(),
+    speed: 2 + score * 0.05 // speed increases a bit with score
+  });
+}
+
+function changeBucketColor() {
+  bucket.color = randomColor();
+  bucketColorLabel.textContent = bucket.color;
+}
+
+function updateBucket() {
+  if (leftPressed) bucket.x -= bucket.speed;
+  if (rightPressed) bucket.x += bucket.speed;
+
+  // Keep bucket inside the canvas
+  bucket.x = Math.max(0, Math.min(canvas.width - bucketWidth, bucket.x));
+}
+
+function handleCollisions() {
+  for (let i = circles.length - 1; i >= 0; i--) {
+    const c = circles[i];
+    const inBucketX = c.x > bucket.x && c.x < bucket.x + bucketWidth;
+    const inBucketY = c.y + c.radius > bucketY && c.y - c.radius < bucketY + bucketHeight;
+
+    if (inBucketX && inBucketY) {
+      // If the circle reaches the bucket area, we treat it as a catch
+      if (c.color === bucket.color) {
+        score += 1;
+        flashTimer = 6; // short visual flash
+        playTone(640, 0.08, "triangle", 0.06); // pleasant chime
+      } else {
+        lives -= 1;
+        playTone(180, 0.12, "square", 0.06); // buzzy error
+      }
+      circles.splice(i, 1);
+    }
+  }
+}
+
+function updateCircles(delta) {
+  for (let i = circles.length - 1; i >= 0; i--) {
+    const c = circles[i];
+    c.y += c.speed * (delta / 16.67); // normalize to ~60fps
+
+    // If a circle hits the bottom
+    if (c.y - c.radius > canvas.height) {
+      if (c.color === bucket.color) {
+        lives -= 1; // missed a correct color
+        playTone(220, 0.12, "sawtooth", 0.05); // miss sound
+      }
+      circles.splice(i, 1);
+    }
+  }
+}
+
+function drawBucket() {
+  ctx.fillStyle = bucket.color;
+  ctx.fillRect(bucket.x, bucketY, bucketWidth, bucketHeight);
+  ctx.strokeStyle = "#333";
+  ctx.strokeRect(bucket.x, bucketY, bucketWidth, bucketHeight);
+}
+
+function drawCircles() {
+  for (const c of circles) {
+    ctx.beginPath();
+    ctx.fillStyle = c.color;
+    ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.closePath();
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawCircles();
+  drawBucket();
+}
+
+function updateHUD() {
+  scoreEl.textContent = score;
+  livesEl.textContent = lives;
+}
+
+function endGame() {
+  gameOver = true;
+  overlay.style.display = "grid";
+  finalScoreEl.textContent = `Final Score: ${score}`;
+}
+
+// Main game loop
+let lastTime = performance.now();
+function loop(now) {
+  if (gameOver) return;
+
+  const delta = now - lastTime;
+  lastTime = now;
+
+  // Spawn new circles
+  if (now - lastSpawn > spawnInterval) {
+    spawnCircle();
+    lastSpawn = now;
+  }
+
+  // Change bucket color occasionally
+  if (now - lastColorChange > colorChangeInterval) {
+    changeBucketColor();
+    lastColorChange = now;
+  }
+
+  updateBucket();
+  updateCircles(delta);
+  handleCollisions();
+  draw();
+  updateHUD();
+
+  // Visual feedback for correct catch
+  if (flashTimer > 0) {
+    canvas.classList.add("flash");
+    flashTimer--;
+  } else {
+    canvas.classList.remove("flash");
+  }
+
+  if (lives <= 0) endGame();
+
+  requestAnimationFrame(loop);
+}
+
+// Input handling
+window.addEventListener("keydown", (e) => {
+  initAudio(); // unlock audio on first key press
+  if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") leftPressed = true;
+  if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") rightPressed = true;
+});
+
+window.addEventListener("keyup", (e) => {
+  if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") leftPressed = false;
+  if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") rightPressed = false;
+});
+
+// Restart button
+restartBtn.addEventListener("click", () => {
+  initAudio(); // also unlock audio if user clicks restart
+  circles = [];
+  score = 0;
+  lives = 3;
+  bucket.x = (canvas.width - bucketWidth) / 2;
+  changeBucketColor();
+  overlay.style.display = "none";
+  gameOver = false;
+  lastSpawn = performance.now();
+  lastColorChange = performance.now();
+  lastTime = performance.now();
+  requestAnimationFrame(loop);
+});
+
+// Start the game
+changeBucketColor();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
