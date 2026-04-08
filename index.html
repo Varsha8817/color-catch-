@@ -65,6 +65,38 @@
     border-radius: 10px;
   }
 
+  .controls {
+    display: none;
+    gap: 12px;
+  }
+
+  .controls button {
+    padding: 10px 16px;
+    border: 2px solid #d7d7d7;
+    border-radius: 10px;
+    background: #ffffff;
+    font-weight: 700;
+    cursor: pointer;
+    min-width: 110px;
+  }
+
+  .controls button:active {
+    transform: translateY(1px);
+  }
+
+  /* Show bigger buttons on smaller screens (mobile/tablet) */
+  @media (max-width: 700px) {
+    .controls {
+      display: flex;
+    }
+
+    .controls button {
+      min-width: 140px;
+      padding: 14px 20px;
+      font-size: 18px;
+    }
+  }
+
   .hint {
     font-size: 13px;
     color: #555;
@@ -127,7 +159,11 @@
       <canvas id="game" width="400" height="600" aria-label="Color Catch Game"></canvas>
     </div>
 
-    <div class="hint">Move with Arrow Keys or A/D. Catch only matching colors.</div>
+    <div class="controls">
+      <button id="btnLeft" aria-label="Move Left">◀ Left</button>
+      <button id="btnRight" aria-label="Move Right">Right ▶</button>
+    </div>
+    <div class="hint">Move with Arrow Keys, A/D, or the buttons below.</div>
   </div>
 
   <div class="overlay" id="overlay">
@@ -152,6 +188,8 @@ const bucketColorLabel = document.getElementById("bucketColorLabel");
 const overlay = document.getElementById("overlay");
 const finalScoreEl = document.getElementById("finalScore");
 const restartBtn = document.getElementById("restartBtn");
+const btnLeft = document.getElementById("btnLeft");
+const btnRight = document.getElementById("btnRight");
 
 // Game settings
 const COLORS = ["red", "blue", "green", "yellow"]; // possible circle colors
@@ -357,6 +395,28 @@ window.addEventListener("keyup", (e) => {
   if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") leftPressed = false;
   if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") rightPressed = false;
 });
+
+// On-screen buttons for touch/mouse users
+function bindHoldButton(button, directionSetter) {
+  const start = (e) => {
+    e.preventDefault();
+    initAudio();
+    directionSetter(true);
+  };
+  const end = (e) => {
+    e.preventDefault();
+    directionSetter(false);
+  };
+  button.addEventListener("mousedown", start);
+  button.addEventListener("mouseup", end);
+  button.addEventListener("mouseleave", end);
+  button.addEventListener("touchstart", start, { passive: false });
+  button.addEventListener("touchend", end);
+  button.addEventListener("touchcancel", end);
+}
+
+bindHoldButton(btnLeft, (state) => (leftPressed = state));
+bindHoldButton(btnRight, (state) => (rightPressed = state));
 
 // Restart button
 restartBtn.addEventListener("click", () => {
