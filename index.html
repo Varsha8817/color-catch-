@@ -266,6 +266,17 @@ function changeBucketColor() {
   bucketColorLabel.textContent = bucket.color;
 }
 
+// Only allow color changes when no circle is overlapping the bucket area.
+// This prevents losing a life because the color switched mid-catch.
+function safeToChangeColor() {
+  for (const c of circles) {
+    const inBucketX = c.x > bucket.x && c.x < bucket.x + bucketWidth;
+    const inBucketY = c.y + c.radius > bucketY && c.y - c.radius < bucketY + bucketHeight;
+    if (inBucketX && inBucketY) return false;
+  }
+  return true;
+}
+
 function updateBucket() {
   if (leftPressed) bucket.x -= bucket.speed;
   if (rightPressed) bucket.x += bucket.speed;
@@ -361,8 +372,10 @@ function loop(now) {
 
   // Change bucket color occasionally
   if (now - lastColorChange > colorChangeInterval) {
-    changeBucketColor();
-    lastColorChange = now;
+    if (safeToChangeColor()) {
+      changeBucketColor();
+      lastColorChange = now;
+    }
   }
 
   updateBucket();
