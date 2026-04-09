@@ -219,6 +219,10 @@ const spawnInterval = 1000; // 1 circle per second
 // Bucket color changes every 7 seconds to keep things interesting
 let lastColorChange = 0;
 const colorChangeInterval = 7000;
+const warningDuration = 3000; // 3-second warning before color changes
+let warningActive = false;
+let warningStart = 0;
+let warningNextColor = null;
 
 // Small visual feedback when catching
 let flashTimer = 0;
@@ -257,6 +261,9 @@ function spawnCircle() {
     y: -radius,
     radius,
     color: randomColor(),
+    // Each ball remembers which bucket color was active when it spawned.
+    // Its "correctness" will always be based on this stored value.
+    targetColor: bucket.color,
     speed: 2 + score * 0.05 // speed increases a bit with score
   });
 }
@@ -266,15 +273,9 @@ function changeBucketColor() {
   bucketColorLabel.textContent = bucket.color;
 }
 
-// Only allow color changes when no circle is overlapping the bucket area.
-// This prevents losing a life because the color switched mid-catch.
+// Only allow color changes when there are zero balls on screen.
 function safeToChangeColor() {
-  for (const c of circles) {
-    const inBucketX = c.x > bucket.x && c.x < bucket.x + bucketWidth;
-    const inBucketY = c.y + c.radius > bucketY && c.y - c.radius < bucketY + bucketHeight;
-    if (inBucketX && inBucketY) return false;
-  }
-  return true;
+  return circles.length === 0;
 }
 
 function updateBucket() {
@@ -293,7 +294,7 @@ function handleCollisions() {
 
     if (inBucketX && inBucketY) {
       // If the circle reaches the bucket area, we treat it as a catch
-      if (c.color === bucket.color) {
+      if (c.color === c.targetColor) {
         score += 1;
         flashTimer = 6; // short visual flash
         playTone(640, 0.08, "triangle", 0.06); // pleasant chime
@@ -313,7 +314,7 @@ function updateCircles(delta) {
 
     // If a circle hits the bottom
     if (c.y - c.radius > canvas.height) {
-      if (c.color === bucket.color) {
+      if (c.color === c.targetColor) {
         lives -= 1; // missed a correct color
         playTone(220, 0.12, "sawtooth", 0.05); // miss sound
       }
@@ -323,7 +324,9 @@ function updateCircles(delta) {
 }
 
 function drawBucket() {
-  ctx.fillStyle = bucket.color;
+  // Flash the bucket during the 3-second warning.
+  const flashing = warningActive && Math.floor((performance.now() - warningStart) / 250) % 2 === 0;
+  ctx.fillStyle = flashing ? "#ffffff" : bucket.color;
   ctx.fillRect(bucket.x, bucketY, bucketWidth, bucketHeight);
   ctx.strokeStyle = "#333";
   ctx.strokeRect(bucket.x, bucketY, bucketWidth, bucketHeight);
@@ -365,17 +368,24 @@ function loop(now) {
   lastTime = now;
 
   // Spawn new circles
-  if (now - lastSpawn > spawnInterval) {
+  if (!warningActive && now - lastSpawn > spawnInterval) {
     spawnCircle();
     lastSpawn = now;
   }
 
-  // Change bucket color occasionally
-  if (now - lastColorChange > colorChangeInterval) {
-    if (safeToChangeColor()) {
-      changeBucketColor();
-      lastColorChange = now;
-    }
+  // Start a 3-second warning, then change color only if no balls are on screen
+  if (!warningActive && now - lastColorChange > colorChangeInterval && safeToChangeColor()) {
+    warningActive = true;
+    warningStart = now;
+    warningNextColor = randomColor();
+  }
+
+  if (warningActive && now - warningStart >= warningDuration) {
+    bucket.color = warningNextColor;
+    bucketColorLabel.textContent = bucket.color;
+    warningActive = false;
+    warningNextColor = null;
+    lastColorChange = now;
   }
 
   updateBucket();
