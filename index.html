@@ -216,13 +216,12 @@ let rightPressed = false;
 let lastSpawn = 0;
 const spawnInterval = 1000; // 1 circle per second
 
-// Bucket color changes every 7 seconds to keep things interesting
-let lastColorChange = 0;
-const colorChangeInterval = 7000;
-const warningDuration = 3000; // 3-second warning before color changes
-let warningActive = false;
-let warningStart = 0;
-let warningNextColor = null;
+// Wave timing: bucket color changes only between waves
+const wavePause = 1000; // 1-second pause between waves
+let waveActive = true;
+let waveHadBall = false;
+let intermission = false;
+let intermissionStart = 0;
 
 // Small visual feedback when catching
 let flashTimer = 0;
@@ -273,11 +272,6 @@ function changeBucketColor() {
   bucketColorLabel.textContent = bucket.color;
 }
 
-// Only allow color changes when there are zero balls on screen.
-function safeToChangeColor() {
-  return circles.length === 0;
-}
-
 function updateBucket() {
   if (leftPressed) bucket.x -= bucket.speed;
   if (rightPressed) bucket.x += bucket.speed;
@@ -324,9 +318,7 @@ function updateCircles(delta) {
 }
 
 function drawBucket() {
-  // Flash the bucket during the 3-second warning.
-  const flashing = warningActive && Math.floor((performance.now() - warningStart) / 250) % 2 === 0;
-  ctx.fillStyle = flashing ? "#ffffff" : bucket.color;
+  ctx.fillStyle = bucket.color;
   ctx.fillRect(bucket.x, bucketY, bucketWidth, bucketHeight);
   ctx.strokeStyle = "#333";
   ctx.strokeRect(bucket.x, bucketY, bucketWidth, bucketHeight);
@@ -368,24 +360,26 @@ function loop(now) {
   lastTime = now;
 
   // Spawn new circles
-  if (!warningActive && now - lastSpawn > spawnInterval) {
+  if (!intermission && waveActive && now - lastSpawn > spawnInterval) {
     spawnCircle();
+    waveHadBall = true;
     lastSpawn = now;
   }
 
-  // Start a 3-second warning, then change color only if no balls are on screen
-  if (!warningActive && now - lastColorChange > colorChangeInterval && safeToChangeColor()) {
-    warningActive = true;
-    warningStart = now;
-    warningNextColor = randomColor();
+  // End wave only after at least one ball has spawned and all are gone.
+  if (waveActive && waveHadBall && circles.length === 0) {
+    waveActive = false;
+    intermission = true;
+    intermissionStart = now;
+    changeBucketColor();
   }
 
-  if (warningActive && now - warningStart >= warningDuration) {
-    bucket.color = warningNextColor;
-    bucketColorLabel.textContent = bucket.color;
-    warningActive = false;
-    warningNextColor = null;
-    lastColorChange = now;
+  // After the pause, start the next wave.
+  if (intermission && now - intermissionStart >= wavePause) {
+    intermission = false;
+    waveActive = true;
+    waveHadBall = false;
+    lastSpawn = now;
   }
 
   updateBucket();
